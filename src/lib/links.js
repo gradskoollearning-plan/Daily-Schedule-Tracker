@@ -1,30 +1,33 @@
 // Edit this list to add/remove/reorder the platform links shown in the "Links" tab.
-// icon: any emoji. title: shown bold. desc: small subtitle (e.g. what it's for).
-// url: full link including https://
-
 export const LINKS = [
   {
     icon: '🎥',
     title: 'Live Classes',
     desc: 'Join scheduled live sessions',
-    url: 'https://example.com/live-classes',
-  },
-  {
-    icon: '📄',
-    title: 'Session Material',
-    desc: 'PDFs, cheat sheets & notes',
-    url: 'https://example.com/materials',
+    url: 'https://courses.gradskool.in/learn',
   },
   {
     icon: '🧪',
     title: 'Mock Tests',
     desc: 'Attempt your scheduled mocks',
-    url: 'https://example.com/mocks',
+    url: 'https://gradskool.testfunda.com/TestCentre',
   },
   {
     icon: '💬',
     title: 'Community / Doubts',
     desc: 'Ask doubts, discuss with batchmates',
-    url: 'https://example.com/community',
+    url: 'https://www.facebook.com/share/g/18qABe1NsW/',
+  },
+  {
+    icon: '📈',
+    title: 'GRADSCALE',
+    desc: 'Daily Drills + PYQs + Tools',
+    url: 'https://www.gradscale.in/',
+  },
+  {
+    icon: '📖',
+    title: 'GRADFLIX',
+    desc: 'Daily Essays + RCs on those essays',
+    url: 'https://gradflix.in/',
   },
 ];
