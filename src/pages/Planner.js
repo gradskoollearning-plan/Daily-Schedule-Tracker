@@ -14,6 +14,7 @@ const SCORE_SECTIONS = [
 ];
 const DEFAULT_SCORE_SECTIONS = { mock:['varc','dilr','qa'], sectional:[], area_test:[] };
 const EMPTY_SCORE_FORM = {
+  label:'',
   sections: [],
   varc_score:'',varc_attempts:'',varc_accuracy:'',
   dilr_score:'',dilr_attempts:'',dilr_accuracy:'',
@@ -34,6 +35,7 @@ export default function Planner() {
   const [collapsed, setCollapsed] = useState({});
   const [scoreForm, setScoreForm] = useState(EMPTY_SCORE_FORM);
   const [showScoreForm, setShowScoreForm] = useState(false);
+  const [editingScoreId, setEditingScoreId] = useState(null);
   const setSF = (k,v) => setScoreForm(f=>({...f,[k]:v}));
 
   const entry = SCHEDULE.find(d=>d.date===selDate);
@@ -72,24 +74,33 @@ export default function Planner() {
 
   const stepsDone = entry?.type==='class' ? STEPS.filter(s=>prog[`step${s.num}`]).length : 0;
 
-  // For mock/sectional/area_test days — is there already a logged score for this exact test?
-  const linkedScore = entry ? scores.find(sc=>sc.date===entry.date && sc.test_name===entry.topic) : null;
+  // A single day can bundle several tests (e.g. "Algebra Area Wise Test 4 to 7"
+  // is really 4 separate tests). Each logged part gets its own test_scores row,
+  // named "<topic> — <label>"; an unlabeled entry just uses the topic as-is.
+  const linkedScores = entry
+    ? scores.filter(sc=>sc.date===entry.date && (sc.test_name===entry.topic || sc.test_name.startsWith(entry.topic+' — ')))
+    : [];
 
-  function openScoreForm() {
-    if (linkedScore) {
+  function labelOf(sc){ return sc.test_name===entry.topic ? '' : sc.test_name.slice(entry.topic.length+3); }
+
+  function openScoreForm(existing) {
+    if (existing) {
       const sections = SCORE_SECTIONS.filter(({key})=>
-        linkedScore[`${key}_score`]!=null || linkedScore[`${key}_attempts`]!=null || linkedScore[`${key}_accuracy`]!=null
+        existing[`${key}_score`]!=null || existing[`${key}_attempts`]!=null || existing[`${key}_accuracy`]!=null
       ).map(s=>s.key);
       setScoreForm({
+        label: labelOf(existing),
         sections: sections.length ? sections : (DEFAULT_SCORE_SECTIONS[entry.type]||[]),
-        varc_score:linkedScore.varc_score??'', varc_attempts:linkedScore.varc_attempts??'', varc_accuracy:linkedScore.varc_accuracy??'',
-        dilr_score:linkedScore.dilr_score??'', dilr_attempts:linkedScore.dilr_attempts??'', dilr_accuracy:linkedScore.dilr_accuracy??'',
-        qa_score:linkedScore.qa_score??'',     qa_attempts:linkedScore.qa_attempts??'',     qa_accuracy:linkedScore.qa_accuracy??'',
-        total_score:linkedScore.total_score??'', percentile:linkedScore.percentile??'',
-        overall_accuracy:linkedScore.overall_accuracy??'', rank:linkedScore.rank??'', notes:linkedScore.notes??'',
+        varc_score:existing.varc_score??'', varc_attempts:existing.varc_attempts??'', varc_accuracy:existing.varc_accuracy??'',
+        dilr_score:existing.dilr_score??'', dilr_attempts:existing.dilr_attempts??'', dilr_accuracy:existing.dilr_accuracy??'',
+        qa_score:existing.qa_score??'',     qa_attempts:existing.qa_attempts??'',     qa_accuracy:existing.qa_accuracy??'',
+        total_score:existing.total_score??'', percentile:existing.percentile??'',
+        overall_accuracy:existing.overall_accuracy??'', rank:existing.rank??'', notes:existing.notes??'',
       });
+      setEditingScoreId(existing.id);
     } else {
       setScoreForm({ ...EMPTY_SCORE_FORM, sections: DEFAULT_SCORE_SECTIONS[entry.type]||[] });
+      setEditingScoreId(null);
     }
     setShowScoreForm(true);
   }
@@ -102,19 +113,27 @@ export default function Planner() {
   }
 
   async function saveScoreForm() {
+    const finalTestName = scoreForm.label.trim() ? `${entry.topic} — ${scoreForm.label.trim()}` : entry.topic;
     const payload = {
-      user_id:user.id, date:entry.date, test_name:entry.topic, test_type:entry.type,
+      user_id:user.id, date:entry.date, test_name:finalTestName, test_type:entry.type,
       varc_score:num(scoreForm.varc_score), varc_attempts:num(scoreForm.varc_attempts), varc_accuracy:num(scoreForm.varc_accuracy),
       dilr_score:num(scoreForm.dilr_score), dilr_attempts:num(scoreForm.dilr_attempts), dilr_accuracy:num(scoreForm.dilr_accuracy),
       qa_score:num(scoreForm.qa_score),     qa_attempts:num(scoreForm.qa_attempts),     qa_accuracy:num(scoreForm.qa_accuracy),
       total_score:num(scoreForm.total_score), percentile:num(scoreForm.percentile),
       overall_accuracy:num(scoreForm.overall_accuracy), rank:num(scoreForm.rank), notes:scoreForm.notes||null,
     };
-    await supabase.from('test_scores').upsert(payload, { onConflict:'user_id,date,test_name' });
+    if (editingScoreId) await supabase.from('test_scores').update(payload).eq('id', editingScoreId);
+    else await supabase.from('test_scores').upsert(payload, { onConflict:'user_id,date,test_name' });
     await upsertProgress(entry.date, { task_done:true, is_backlog:false });
-    setShowScoreForm(false);
+    setShowScoreForm(false); setEditingScoreId(null);
     reload();
     showToast('✅ Score saved!');
+  }
+
+  async function deleteScore(id) {
+    await supabase.from('test_scores').delete().eq('id', id);
+    reload();
+    showToast('Deleted');
   }
 
   const filtered = SCHEDULE.filter(d=>{
@@ -324,16 +343,28 @@ export default function Planner() {
                   {!prog.task_done&&prog.is_backlog&&<span className="ab-sub">In Backlog</span>}
                 </button>
               </div>
-              <div style={{marginTop:14,paddingTop:14,borderTop:'1px solid #f1f5f9',display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
-                <button className="btn btn-primary btn-sm" onClick={openScoreForm}>
-                  📊 {linkedScore?'Edit Score':'Log Score'}
+              <div style={{marginTop:14,paddingTop:14,borderTop:'1px solid #f1f5f9',display:'flex',flexDirection:'column',gap:10}}>
+                {linkedScores.length>0 && (
+                  <div style={{display:'flex',flexDirection:'column',gap:6}}>
+                    {linkedScores.map(sc=>(
+                      <div key={sc.id} style={{display:'flex',alignItems:'center',gap:10,padding:'8px 12px',background:'#f8fafc',border:'1px solid #f1f5f9',borderRadius:8,flexWrap:'wrap'}}>
+                        <span style={{fontSize:12,fontWeight:700,color:'#0f172a'}}>{labelOf(sc)||entry.topic}</span>
+                        <span style={{fontSize:12,color:'#059669',fontWeight:600}}>
+                          {sc.total_score!=null?`${sc.total_score} pts`:''}{sc.percentile!=null?` · ${sc.percentile}%ile`:''}
+                        </span>
+                        <div style={{marginLeft:'auto',display:'flex',gap:6}}>
+                          <button className="btn btn-ghost btn-sm" onClick={()=>openScoreForm(sc)}>Edit</button>
+                          <button className="btn btn-danger btn-sm" onClick={()=>deleteScore(sc.id)}>Del</button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <button className="btn btn-primary btn-sm" style={{alignSelf:'flex-start'}} onClick={()=>openScoreForm(null)}>
+                  📊 {linkedScores.length>0 ? '+ Log Another Part' : 'Log Score'}
                 </button>
-                {linkedScore && (
-                  <span style={{fontSize:12,fontWeight:700,color:'#059669'}}>
-                    {linkedScore.total_score!=null?`${linkedScore.total_score} pts`:''}
-                    {linkedScore.percentile!=null?` · ${linkedScore.percentile}%ile`:''}
-                    {' — shows in Scores tab too'}
-                  </span>
+                {linkedScores.length===0 && (
+                  <p style={{fontSize:11,color:'#94a3b8'}}>Bundled multiple tests in one day (like "Test 4 to 7")? Give each one a label when logging so they stay separate.</p>
                 )}
               </div>
             </div>
@@ -371,6 +402,12 @@ export default function Planner() {
             </div>
             <div className="modal-body">
               <p style={{fontSize:13,color:'#64748b',marginTop:-6}}>{entry.topic} · {entry.date}</p>
+
+              <div>
+                <label className="label">Which part is this? (optional)</label>
+                <input className="input" value={scoreForm.label} onChange={e=>setSF('label',e.target.value)}
+                  placeholder="e.g. Test 4, Test 5 — leave blank if this day is just one test"/>
+              </div>
 
               <div>
                 <div style={{fontSize:11,fontWeight:800,color:'#94a3b8',textTransform:'uppercase',letterSpacing:'0.08em',paddingBottom:6,borderBottom:'1px solid #f1f5f9',marginBottom:10}}>
