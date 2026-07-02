@@ -171,18 +171,49 @@ export default function Planner() {
               <div style={{display:'flex',flexDirection:'column',gap:7}}>
                 {STEPS.map(step=>{
                   const done=prog[`step${step.num}`]||false;
+                  const isQuiz = step.num===5;
                   return (
-                    <button key={step.num} onClick={()=>toggleStep(step.num)}
-                      className={`step-pill ${done?'done':''}`}>
-                      <span style={{width:22,height:22,borderRadius:6,flexShrink:0,
-                        background:done?'#059669':'#f1f5f9',color:done?'#fff':'#94a3b8',
-                        display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:700}}>
-                        {done?'✓':step.num}
-                      </span>
-                      <span style={{fontSize:14}}>{step.icon}</span>
-                      <span>{step.label}</span>
-                      {done&&<span style={{marginLeft:'auto',fontSize:11,color:'#059669',fontWeight:600}}>Done ✓</span>}
-                    </button>
+                    <div key={step.num}>
+                      <button onClick={()=>toggleStep(step.num)}
+                        className={`step-pill ${done?'done':''}`}>
+                        <span style={{width:22,height:22,borderRadius:6,flexShrink:0,
+                          background:done?'#059669':'#f1f5f9',color:done?'#fff':'#94a3b8',
+                          display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:700}}>
+                          {done?'✓':step.num}
+                        </span>
+                        <span style={{fontSize:14}}>{step.icon}</span>
+                        <span>{step.label}</span>
+                        {done&&<span style={{marginLeft:'auto',fontSize:11,color:'#059669',fontWeight:600}}>Done ✓</span>}
+                      </button>
+
+                      {/* Quiz marks — max marks vary per quiz, so capture both */}
+                      {isQuiz && done && (
+                        <div style={{display:'flex',gap:10,alignItems:'flex-end',
+                          padding:'10px 12px',marginTop:4,marginLeft:30,
+                          background:'#f8fafc',border:'1px solid #f1f5f9',borderRadius:8}}>
+                          <div>
+                            <label className="label">Marks Scored</label>
+                            <input className="input" type="number" style={{width:100}}
+                              value={prog.quiz_marks_scored??''}
+                              onChange={e=>upsertProgress(selDate,{quiz_marks_scored:e.target.value===''?null:Number(e.target.value)})}
+                              placeholder="e.g. 7"/>
+                          </div>
+                          <span style={{paddingBottom:8,color:'#94a3b8',fontWeight:700}}>/</span>
+                          <div>
+                            <label className="label">Max Marks</label>
+                            <input className="input" type="number" style={{width:100}}
+                              value={prog.quiz_marks_max??''}
+                              onChange={e=>upsertProgress(selDate,{quiz_marks_max:e.target.value===''?null:Number(e.target.value)})}
+                              placeholder="e.g. 10"/>
+                          </div>
+                          {prog.quiz_marks_scored!=null && prog.quiz_marks_max>0 && (
+                            <span style={{paddingBottom:8,fontSize:12,fontWeight:700,color:'#ff5e5f'}}>
+                              {Math.round((prog.quiz_marks_scored/prog.quiz_marks_max)*100)}%
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   );
                 })}
               </div>

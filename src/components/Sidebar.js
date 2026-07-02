@@ -11,6 +11,7 @@ const NAV_GROUPS = [
   ]},
   { label: 'Performance', items: [
     { id:'scores',    icon:'📊', label:'Scores' },
+    { id:'mistakes',  icon:'🧩', label:'Mistakes' },
     { id:'analytics', icon:'📈', label:'Analytics' },
     { id:'leaderboard',icon:'🏆',label:'Leaderboard' },
   ]},

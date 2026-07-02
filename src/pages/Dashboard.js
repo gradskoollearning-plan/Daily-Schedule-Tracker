@@ -1,16 +1,30 @@
 import { useState } from 'react';
+import { supabase } from '../lib/supabase';
 import { useAuth } from '../lib/AuthContext';
 import { useProgress } from '../hooks/useProgress';
-import { SCHEDULE, TYPE_CFG } from '../lib/schedule';
+import { SCHEDULE, TYPE_CFG, EXAM_DATE } from '../lib/schedule';
 
 export default function Dashboard({ setActive }) {
-  const { profile } = useAuth();
+  const { user, profile, refreshProfile } = useAuth();
   const { progress, scores, loading, backlogs, elapsed, daysCompleted,
           avgPercentile, streak, weakSection, upsertProgress } = useProgress();
   const [showAllBacklogs, setShowAllBacklogs] = useState(false);
+  const [editingTarget, setEditingTarget] = useState(false);
+  const [targetVal, setTargetVal] = useState('');
   const [toast, setToast] = useState('');
   const today = new Date().toISOString().split('T')[0];
   function showToast(m) { setToast(m); setTimeout(()=>setToast(''),2500); }
+
+  async function saveTarget() {
+    const val = Number(targetVal);
+    if(!val || val<=0 || val>100) { setEditingTarget(false); return; }
+    await supabase.from('profiles').update({ target_percentile: val }).eq('id', user.id);
+    await refreshProfile();
+    setEditingTarget(false);
+    showToast('🎯 Target updated');
+  }
+
+  const daysToExam = Math.ceil((new Date(EXAM_DATE) - new Date(today)) / (1000*60*60*24));
 
   async function clearBacklog(date) {
     await upsertProgress(date, { task_done:true, backlog_cleared:true });
@@ -35,7 +49,26 @@ export default function Dashboard({ setActive }) {
           <h1 style={s.title}>Good {greet()}, {(profile?.name||'').split(' ')[0]||'there'} 👋</h1>
           <p style={s.sub}>{new Date().toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</p>
         </div>
-        {streak>0 && <div style={s.streakBadge}>🔥 {streak}-day streak</div>}
+        <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
+          {daysToExam>0 && (
+            <div style={s.examBadge}>🗓️ {daysToExam} days to CAT</div>
+          )}
+          {streak>0 && <div style={s.streakBadge}>🔥 {streak}-day streak</div>}
+          {editingTarget ? (
+            <div style={{display:'flex',alignItems:'center',gap:6}}>
+              <input className="input" type="number" autoFocus value={targetVal}
+                onChange={e=>setTargetVal(e.target.value)}
+                onKeyDown={e=>e.key==='Enter'&&saveTarget()}
+                style={{width:70,padding:'6px 8px',fontSize:13}} placeholder="99"/>
+              <button className="btn btn-primary btn-sm" onClick={saveTarget}>Save</button>
+            </div>
+          ) : (
+            <button style={s.targetBadge}
+              onClick={()=>{setTargetVal(profile?.target_percentile??'99');setEditingTarget(true);}}>
+              🎯 Target: {profile?.target_percentile??'—'}%ile
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Backlog banner */}
@@ -87,13 +120,15 @@ export default function Dashboard({ setActive }) {
         <div className="grid-4">
           {[
             {icon:'✅',label:'Days Done',   val:daysCompleted, of:elapsed,  color:'#ff5e5f'},
-            {icon:'📈',label:'Avg %ile',    val:`${avgPercentile}%ile`,      color:'#059669'},
+            {icon:'📈',label:'Avg %ile',    val:`${avgPercentile}%ile`,      color:'#059669',
+             sub: profile?.target_percentile ? `Target: ${profile.target_percentile}%ile (${avgPercentile>=profile.target_percentile?'✓ met':`${(profile.target_percentile-avgPercentile).toFixed(0)} to go`})` : null},
             {icon:'⏱️',label:'Study Hours', val:`${studyHrs}h`,              color:'#0284c7'},
             {icon:'⚠️',label:'Backlogs',    val:backlogs.length,             color:'#e11d48'},
           ].map(c=>(
             <div key={c.label} className="metric">
               <p className="metric-label">{c.icon} {c.label}</p>
               <p className="metric-value" style={{color:c.color}}>{c.val}</p>
+              {c.sub && <p className="metric-sub">{c.sub}</p>}
               {c.of!=null&&(<>
                 <div className="progress-track" style={{marginTop:6}}>
                   <div className="progress-fill" style={{width:`${Math.round((c.val/c.of)*100)}%`,background:c.color}}/>
@@ -208,6 +243,8 @@ const s={
   title:{fontSize:22,fontWeight:800,color:'#0f172a',marginBottom:4},
   sub:{fontSize:13,color:'#94a3b8'},
   streakBadge:{display:'flex',alignItems:'center',gap:6,padding:'7px 14px',background:'#fffbeb',border:'1px solid #fde68a',borderRadius:99,fontSize:13,fontWeight:700,color:'#92400e'},
+  examBadge:{display:'flex',alignItems:'center',gap:6,padding:'7px 14px',background:'#fff1f1',border:'1px solid #ffc9c9',borderRadius:99,fontSize:13,fontWeight:700,color:'#ff5e5f'},
+  targetBadge:{display:'flex',alignItems:'center',gap:6,padding:'7px 14px',background:'#f0fdf4',border:'1px solid #bbf7d0',borderRadius:99,fontSize:13,fontWeight:700,color:'#059669',cursor:'pointer',fontFamily:'inherit'},
   backlogList:{display:'flex',flexDirection:'column',gap:8},
   backlogItem:{display:'flex',alignItems:'center',gap:10,padding:'10px 14px',background:'#fff',border:'1px solid #fed7aa',borderRadius:10},
   zone:{display:'flex',flexDirection:'column',gap:10},

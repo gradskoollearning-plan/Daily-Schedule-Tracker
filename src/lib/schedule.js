@@ -84,9 +84,14 @@ export const TYPE_CFG = {
   sectional: { label:"Sectional",  color:"#7c3aed", bg:"#f5f3ff", border:"#ddd6fe" },
   area_test: { label:"Area Test",  color:"#0369a1", bg:"#f0f9ff", border:"#bae6fd" },
   marathon:  { label:"Marathon",   color:"#dc2626", bg:"#fef2f2", border:"#fecaca" },
+  quiz:      { label:"Quiz",       color:"#059669", bg:"#ecfdf5", border:"#a7f3d0" },
 };
 
 export const MONTHS = ["Jun 2026","Jul 2026","Aug 2026"];
+
+// Update this to the official CAT exam date once released — used for the
+// Dashboard countdown. Placeholder assumes the usual "last Sunday of Nov" slot.
+export const EXAM_DATE = "2026-11-29";
 
 export function groupByMonth(schedule) {
   const groups = {};

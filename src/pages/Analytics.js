@@ -1,6 +1,7 @@
+import { useAuth } from '../lib/AuthContext';
 import { useProgress } from '../hooks/useProgress';
 import { SCHEDULE } from '../lib/schedule';
-import { LineChart,Line,XAxis,YAxis,Tooltip,ResponsiveContainer,CartesianGrid,Legend,BarChart,Bar } from 'recharts';
+import { LineChart,Line,XAxis,YAxis,Tooltip,ResponsiveContainer,CartesianGrid,Legend,BarChart,Bar,ReferenceLine } from 'recharts';
 
 const TIP = ({active,payload,label}) => {
   if(!active||!payload?.length) return null;
@@ -11,6 +12,7 @@ const TIP = ({active,payload,label}) => {
 };
 
 export default function Analytics() {
+  const { profile } = useAuth();
   const { scores, progress, loading, mocks, avgPercentile, bestPercentile, streak, weakSection, daysCompleted, elapsed, backlogs } = useProgress();
   const today = new Date().toISOString().split('T')[0];
 
@@ -114,6 +116,10 @@ export default function Analytics() {
                 <YAxis tick={{fill:'#94a3b8',fontSize:11}} axisLine={false} tickLine={false}/>
                 <Tooltip content={<TIP/>}/>
                 <Legend iconSize={10} wrapperStyle={{fontSize:12,color:'#475569'}}/>
+                {profile?.target_percentile && (
+                  <ReferenceLine y={profile.target_percentile} stroke="#94a3b8" strokeDasharray="4 4"
+                    label={{value:`Target ${profile.target_percentile}%ile`,position:'insideTopRight',fill:'#94a3b8',fontSize:11}}/>
+                )}
                 <Line type="monotone" dataKey="Total"      stroke="#ff5e5f" strokeWidth={2.5} dot={{r:4,fill:'#ff5e5f',strokeWidth:0}}/>
                 <Line type="monotone" dataKey="Percentile" stroke="#059669" strokeWidth={2.5} dot={{r:4,fill:'#059669',strokeWidth:0}}/>
                 <Line type="monotone" dataKey="Accuracy"   stroke="#d97706" strokeWidth={2.5} dot={{r:4,fill:'#d97706',strokeWidth:0}}/>

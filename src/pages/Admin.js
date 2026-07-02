@@ -8,6 +8,7 @@ export default function Admin() {
   const [students, setStudents]   = useState([]);
   const [allProg, setAllProg]     = useState([]);
   const [allScores, setAllScores] = useState([]);
+  const [allMistakes, setAllMistakes] = useState([]);
   const [selected, setSelected]   = useState(null);
   const [loading, setLoading]     = useState(true);
   const [tab, setTab]             = useState('overview');
@@ -19,10 +20,12 @@ export default function Admin() {
       supabase.from('profiles').select('*').eq('is_admin',false),
       supabase.from('daily_progress').select('*'),
       supabase.from('test_scores').select('*').order('date',{ascending:false}),
-    ]).then(([{data:st},{data:pr},{data:sc}])=>{
+      supabase.from('mistake_log').select('*').order('date',{ascending:false}),
+    ]).then(([{data:st},{data:pr},{data:sc},{data:ml}])=>{
       setStudents(st||[]);
       setAllProg(pr||[]);
       setAllScores(sc||[]);
+      setAllMistakes(ml||[]);
       setLoading(false);
     });
   },[profile]);
@@ -54,13 +57,35 @@ export default function Admin() {
     return { doneCount, elapsed, backlogs, avgPct, studyHrs, mocks: mocks.length, lastActive };
   }
 
-  const selStudent = students.find(s=>s.id===selected);
-  const selStats   = selected ? getStats(selected) : null;
-  const selProg    = selected ? allProg.filter(p=>p.user_id===selected) : [];
-  const selScores  = selected ? allScores.filter(s=>s.user_id===selected) : [];
+  // Accuracy risk: percentile trending down across recent mocks, or a pile-up
+  // of unresolved mistakes (same errors recurring without being fixed).
+  function getAccuracyRisk(uid) {
+    const mocks = allScores
+      .filter(s=>s.user_id===uid && s.test_type==='mock')
+      .sort((a,b)=>a.date.localeCompare(b.date));
+    const unresolvedMistakes = allMistakes.filter(m=>m.user_id===uid && !m.resolved).length;
 
-  // Risk students (backlogs >= 3 or no activity in 3 days)
+    let trendDown = false, dropAmount = 0;
+    if(mocks.length>=3){
+      const last = mocks[mocks.length-1].percentile||0;
+      const priorSlice = mocks.slice(-4,-1);
+      const prevAvg = priorSlice.reduce((a,sc)=>a+(sc.percentile||0),0)/priorSlice.length;
+      if(last < prevAvg-5){ trendDown=true; dropAmount = Math.round(prevAvg-last); }
+    }
+    const highMistakes = unresolvedMistakes>=5;
+    return { flagged: trendDown||highMistakes, trendDown, dropAmount, unresolvedMistakes, highMistakes };
+  }
+
+  const selStudent  = students.find(s=>s.id===selected);
+  const selStats    = selected ? getStats(selected) : null;
+  const selProg     = selected ? allProg.filter(p=>p.user_id===selected) : [];
+  const selScores   = selected ? allScores.filter(s=>s.user_id===selected) : [];
+  const selMistakes = selected ? allMistakes.filter(m=>m.user_id===selected) : [];
+
+  // Risk students (backlogs >= 3)
   const atRisk = students.filter(s=>getStats(s.id).backlogs>=3);
+  // Risk students on accuracy (declining percentile or recurring unresolved mistakes)
+  const atRiskAccuracy = students.filter(s=>getAccuracyRisk(s.id).flagged);
 
   return (
     <div style={s.page} className="fade-in">
@@ -71,11 +96,12 @@ export default function Admin() {
         </div>
         <div style={{display:'flex',gap:8}}>
           <div style={s.sumCard}><span style={{fontSize:20}}>👥</span><div><p style={{fontSize:18,fontWeight:800}}>{students.length}</p><p style={{fontSize:11,color:'#94a3b8'}}>Students</p></div></div>
-          <div style={s.sumCard}><span style={{fontSize:20}}>⚠️</span><div><p style={{fontSize:18,fontWeight:800,color:'#e11d48'}}>{atRisk.length}</p><p style={{fontSize:11,color:'#94a3b8'}}>At Risk</p></div></div>
+          <div style={s.sumCard}><span style={{fontSize:20}}>⚠️</span><div><p style={{fontSize:18,fontWeight:800,color:'#e11d48'}}>{atRisk.length}</p><p style={{fontSize:11,color:'#94a3b8'}}>Backlog Risk</p></div></div>
+          <div style={s.sumCard}><span style={{fontSize:20}}>📉</span><div><p style={{fontSize:18,fontWeight:800,color:'#c2410c'}}>{atRiskAccuracy.length}</p><p style={{fontSize:11,color:'#94a3b8'}}>Accuracy Risk</p></div></div>
         </div>
       </div>
 
-      {/* At-risk banner */}
+      {/* At-risk banner: backlogs */}
       {atRisk.length>0&&(
         <div style={{padding:'12px 16px',background:'#fff1f2',border:'1px solid #fecdd3',borderRadius:10}}>
           <p style={{fontSize:13,fontWeight:700,color:'#9f1239',marginBottom:8}}>⚠️ Students with 3+ backlogs</p>
@@ -86,6 +112,28 @@ export default function Admin() {
                 {s.name} ({getStats(s.id).backlogs} backlogs)
               </button>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* At-risk banner: accuracy */}
+      {atRiskAccuracy.length>0&&(
+        <div style={{padding:'12px 16px',background:'#fff7ed',border:'1px solid #fed7aa',borderRadius:10}}>
+          <p style={{fontSize:13,fontWeight:700,color:'#9a3412',marginBottom:8}}>📉 Students at risk on accuracy</p>
+          <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+            {atRiskAccuracy.map(st=>{
+              const r = getAccuracyRisk(st.id);
+              const reasons = [
+                r.trendDown && `%ile dropped ~${r.dropAmount} pts`,
+                r.highMistakes && `${r.unresolvedMistakes} unresolved mistakes`,
+              ].filter(Boolean).join(' · ');
+              return (
+                <button key={st.id} onClick={()=>{setSelected(st.id);setTab('mistakes');}}
+                  style={{padding:'4px 12px',background:'#fff',border:'1px solid #fed7aa',borderRadius:99,fontSize:12,fontWeight:600,color:'#9a3412',cursor:'pointer',fontFamily:'inherit'}}>
+                  {st.name} ({reasons})
+                </button>
+              );
+            })}
           </div>
         </div>
       )}
@@ -113,6 +161,7 @@ export default function Admin() {
                   </div>
                 </div>
                 {st2.backlogs>=3&&<span style={{fontSize:14}} title={`${st2.backlogs} backlogs`}>⚠️</span>}
+                {getAccuracyRisk(st.id).flagged&&<span style={{fontSize:14}} title="Accuracy risk">📉</span>}
               </button>
             );
           })}
@@ -159,7 +208,7 @@ export default function Admin() {
 
               {/* Tabs */}
               <div className="tabs" style={{alignSelf:'flex-start'}}>
-                {['overview','progress','scores'].map(t=>(
+                {['overview','progress','scores','mistakes'].map(t=>(
                   <button key={t} className={`tab-btn ${tab===t?'active':''}`} onClick={()=>setTab(t)}>
                     {t.charAt(0).toUpperCase()+t.slice(1)}
                   </button>
@@ -185,18 +234,22 @@ export default function Admin() {
               {tab==='progress'&&(
                 <div className="card" style={{padding:0,overflow:'hidden'}}>
                   <table className="tbl">
-                    <thead><tr><th>Date</th><th>Topic</th><th>Type</th><th>Steps</th><th>Done</th><th>Backlog</th></tr></thead>
+                    <thead><tr><th>Date</th><th>Topic</th><th>Type</th><th>Steps</th><th>Quiz</th><th>Done</th><th>Backlog</th></tr></thead>
                     <tbody>
                       {SCHEDULE.filter(d=>d.date<=today).slice(-20).reverse().map(d=>{
                         const p=selProg.find(x=>x.date===d.date)||{};
                         const c=TYPE_CFG[d.type];
                         const steps=d.type==='class'?[1,2,3,4,5].filter(n=>p[`step${n}`]).length:'-';
+                        const hasQuiz = d.type==='class' && p.quiz_marks_max>0;
                         return (
                           <tr key={d.date}>
                             <td style={{fontFamily:'monospace',fontSize:12}}>{d.date}</td>
                             <td style={{fontWeight:600,color:'#0f172a',maxWidth:160,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{d.topic}</td>
                             <td><span className="badge" style={{background:c.bg,color:c.color,border:`1px solid ${c.border}`}}>{c.label}</span></td>
                             <td>{steps==='-'?'—':`${steps}/5`}</td>
+                            <td style={{fontFamily:'monospace',fontWeight:600,color:hasQuiz?'#ff5e5f':'#94a3b8'}}>
+                              {hasQuiz?`${p.quiz_marks_scored??0}/${p.quiz_marks_max}`:'—'}
+                            </td>
                             <td style={{color:p.task_done?'#059669':'#e11d48',fontWeight:700}}>{p.task_done?'✓':'✗'}</td>
                             <td style={{color:p.is_backlog&&!p.task_done?'#d97706':'#94a3b8'}}>{p.is_backlog&&!p.task_done?'📌':'—'}</td>
                           </tr>
@@ -228,6 +281,36 @@ export default function Admin() {
                               </tr>
                             );
                           })}
+                        </tbody>
+                      </table>
+                    </div>
+              )}
+
+              {/* Mistakes */}
+              {tab==='mistakes'&&(
+                selMistakes.length===0
+                  ? <div className="empty-state"><span className="es-icon">🧩</span><h3>No mistakes logged</h3></div>
+                  : <div className="card" style={{padding:0,overflow:'hidden'}}>
+                      <table className="tbl">
+                        <thead><tr><th>Status</th><th>Date</th><th>Section</th><th>Topic</th><th>Test</th><th>Type</th><th>Notes</th></tr></thead>
+                        <tbody>
+                          {selMistakes.slice(0,25).map(m=>(
+                            <tr key={m.id} style={m.resolved?{opacity:0.55}:undefined}>
+                              <td>
+                                <span className="badge" style={m.resolved
+                                  ?{background:'#ecfdf5',color:'#059669',border:'1px solid #a7f3d0'}
+                                  :{background:'#fff1f2',color:'#e11d48',border:'1px solid #fecdd3'}}>
+                                  {m.resolved?'✓ Resolved':'● Open'}
+                                </span>
+                              </td>
+                              <td style={{fontFamily:'monospace',fontSize:12}}>{m.date}</td>
+                              <td><span className="badge" style={{background:'#f8fafc',color:'#0f172a',border:'1px solid #e2e8f0'}}>{m.section}</span></td>
+                              <td style={{fontWeight:600,color:'#0f172a'}}>{m.topic||'—'}</td>
+                              <td style={{color:'#64748b'}}>{m.test_name||'—'}</td>
+                              <td><span className="badge" style={{background:'#fff7ed',color:'#c2410c',border:'1px solid #fed7aa'}}>{m.mistake_type||'—'}</span></td>
+                              <td style={{color:'#64748b',maxWidth:220,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{m.description||'—'}</td>
+                            </tr>
+                          ))}
                         </tbody>
                       </table>
                     </div>
