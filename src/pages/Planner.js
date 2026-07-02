@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { supabase } from '../lib/supabase';
 import { useAuth } from '../lib/AuthContext';
 import { useProgress } from '../hooks/useProgress';
 import { SCHEDULE, STEPS, TYPE_CFG, groupByMonth } from '../lib/schedule';
@@ -6,9 +7,24 @@ import StudyTimer from '../components/StudyTimer';
 
 const today = new Date().toISOString().split('T')[0];
 
+const SCORE_SECTIONS = [
+  { key:'varc', label:'VARC' },
+  { key:'dilr', label:'DILR' },
+  { key:'qa',   label:'QA'   },
+];
+const DEFAULT_SCORE_SECTIONS = { mock:['varc','dilr','qa'], sectional:[], area_test:[] };
+const EMPTY_SCORE_FORM = {
+  sections: [],
+  varc_score:'',varc_attempts:'',varc_accuracy:'',
+  dilr_score:'',dilr_attempts:'',dilr_accuracy:'',
+  qa_score:'',qa_attempts:'',qa_accuracy:'',
+  total_score:'',percentile:'',overall_accuracy:'',rank:'',notes:'',
+};
+const num = v => (v===''||v==null) ? null : Number(v);
+
 export default function Planner() {
   const { user } = useAuth();
-  const { progress, loading, upsertProgress } = useProgress();
+  const { progress, loading, upsertProgress, scores, reload } = useProgress();
   const [selDate, setSelDate] = useState(()=>SCHEDULE.find(d=>d.date>=today)?.date||SCHEDULE[0].date);
   const [notes, setNotes]     = useState('');
   const [saving, setSaving]   = useState(false);
@@ -16,6 +32,9 @@ export default function Planner() {
   const [filter, setFilter]   = useState('all');
   const [search, setSearch]   = useState('');
   const [collapsed, setCollapsed] = useState({});
+  const [scoreForm, setScoreForm] = useState(EMPTY_SCORE_FORM);
+  const [showScoreForm, setShowScoreForm] = useState(false);
+  const setSF = (k,v) => setScoreForm(f=>({...f,[k]:v}));
 
   const entry = SCHEDULE.find(d=>d.date===selDate);
   const prog  = progress[selDate]||{};
@@ -52,6 +71,51 @@ export default function Planner() {
   }
 
   const stepsDone = entry?.type==='class' ? STEPS.filter(s=>prog[`step${s.num}`]).length : 0;
+
+  // For mock/sectional/area_test days — is there already a logged score for this exact test?
+  const linkedScore = entry ? scores.find(sc=>sc.date===entry.date && sc.test_name===entry.topic) : null;
+
+  function openScoreForm() {
+    if (linkedScore) {
+      const sections = SCORE_SECTIONS.filter(({key})=>
+        linkedScore[`${key}_score`]!=null || linkedScore[`${key}_attempts`]!=null || linkedScore[`${key}_accuracy`]!=null
+      ).map(s=>s.key);
+      setScoreForm({
+        sections: sections.length ? sections : (DEFAULT_SCORE_SECTIONS[entry.type]||[]),
+        varc_score:linkedScore.varc_score??'', varc_attempts:linkedScore.varc_attempts??'', varc_accuracy:linkedScore.varc_accuracy??'',
+        dilr_score:linkedScore.dilr_score??'', dilr_attempts:linkedScore.dilr_attempts??'', dilr_accuracy:linkedScore.dilr_accuracy??'',
+        qa_score:linkedScore.qa_score??'',     qa_attempts:linkedScore.qa_attempts??'',     qa_accuracy:linkedScore.qa_accuracy??'',
+        total_score:linkedScore.total_score??'', percentile:linkedScore.percentile??'',
+        overall_accuracy:linkedScore.overall_accuracy??'', rank:linkedScore.rank??'', notes:linkedScore.notes??'',
+      });
+    } else {
+      setScoreForm({ ...EMPTY_SCORE_FORM, sections: DEFAULT_SCORE_SECTIONS[entry.type]||[] });
+    }
+    setShowScoreForm(true);
+  }
+
+  function toggleScoreSection(key) {
+    setScoreForm(f=>{
+      const has = f.sections.includes(key);
+      return { ...f, sections: has ? f.sections.filter(k=>k!==key) : [...f.sections, key] };
+    });
+  }
+
+  async function saveScoreForm() {
+    const payload = {
+      user_id:user.id, date:entry.date, test_name:entry.topic, test_type:entry.type,
+      varc_score:num(scoreForm.varc_score), varc_attempts:num(scoreForm.varc_attempts), varc_accuracy:num(scoreForm.varc_accuracy),
+      dilr_score:num(scoreForm.dilr_score), dilr_attempts:num(scoreForm.dilr_attempts), dilr_accuracy:num(scoreForm.dilr_accuracy),
+      qa_score:num(scoreForm.qa_score),     qa_attempts:num(scoreForm.qa_attempts),     qa_accuracy:num(scoreForm.qa_accuracy),
+      total_score:num(scoreForm.total_score), percentile:num(scoreForm.percentile),
+      overall_accuracy:num(scoreForm.overall_accuracy), rank:num(scoreForm.rank), notes:scoreForm.notes||null,
+    };
+    await supabase.from('test_scores').upsert(payload, { onConflict:'user_id,date,test_name' });
+    await upsertProgress(entry.date, { task_done:true, is_backlog:false });
+    setShowScoreForm(false);
+    reload();
+    showToast('✅ Score saved!');
+  }
 
   const filtered = SCHEDULE.filter(d=>{
     if(filter!=='all'&&d.type!==filter) return false;
@@ -260,6 +324,18 @@ export default function Planner() {
                   {!prog.task_done&&prog.is_backlog&&<span className="ab-sub">In Backlog</span>}
                 </button>
               </div>
+              <div style={{marginTop:14,paddingTop:14,borderTop:'1px solid #f1f5f9',display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
+                <button className="btn btn-primary btn-sm" onClick={openScoreForm}>
+                  📊 {linkedScore?'Edit Score':'Log Score'}
+                </button>
+                {linkedScore && (
+                  <span style={{fontSize:12,fontWeight:700,color:'#059669'}}>
+                    {linkedScore.total_score!=null?`${linkedScore.total_score} pts`:''}
+                    {linkedScore.percentile!=null?` · ${linkedScore.percentile}%ile`:''}
+                    {' — shows in Scores tab too'}
+                  </span>
+                )}
+              </div>
             </div>
           )}
 
@@ -284,6 +360,79 @@ export default function Planner() {
       )}
 
       {toast&&<div className="toast success">{toast}</div>}
+
+      {/* Score log modal — mock/sectional/area_test */}
+      {showScoreForm && entry && (
+        <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&setShowScoreForm(false)}>
+          <div className="modal" style={{maxWidth:600}}>
+            <div className="modal-head">
+              <h3>📊 Log {cfg.label} Score</h3>
+              <button className="close-btn" onClick={()=>setShowScoreForm(false)}>✕</button>
+            </div>
+            <div className="modal-body">
+              <p style={{fontSize:13,color:'#64748b',marginTop:-6}}>{entry.topic} · {entry.date}</p>
+
+              <div>
+                <div style={{fontSize:11,fontWeight:800,color:'#94a3b8',textTransform:'uppercase',letterSpacing:'0.08em',paddingBottom:6,borderBottom:'1px solid #f1f5f9',marginBottom:10}}>
+                  Which sections does this cover?
+                </div>
+                <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+                  {SCORE_SECTIONS.map(sec=>{
+                    const checked = scoreForm.sections.includes(sec.key);
+                    return (
+                      <button key={sec.key} type="button" onClick={()=>toggleScoreSection(sec.key)}
+                        style={{
+                          padding:'6px 14px',borderRadius:99,fontSize:12,fontWeight:700,cursor:'pointer',
+                          fontFamily:'inherit',border:`1.5px solid ${checked?'#ff5e5f':'#e2e8f0'}`,
+                          background:checked?'#fff1f1':'#fff',color:checked?'#ff5e5f':'#94a3b8',
+                        }}>
+                        {checked?'✓ ':''}{sec.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {SCORE_SECTIONS.filter(sec=>scoreForm.sections.includes(sec.key)).map(({key:k,label:l})=>(
+                <div key={k} style={{padding:'12px 14px',background:'#f8fafc',borderRadius:8,border:'1px solid #f1f5f9'}}>
+                  <p style={{fontSize:12,fontWeight:700,color:'#ff5e5f',marginBottom:10}}>{l}</p>
+                  <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:10}}>
+                    {[['score','Score'],['attempts','Attempts'],['accuracy','Accuracy %']].map(([f,lb])=>(
+                      <div key={f}>
+                        <label className="label">{lb}</label>
+                        <input className="input" type="number" value={scoreForm[`${k}_${f}`]}
+                          onChange={e=>setSF(`${k}_${f}`,e.target.value)} placeholder="0"/>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+
+              <div style={{fontSize:11,fontWeight:800,color:'#94a3b8',textTransform:'uppercase',letterSpacing:'0.08em',paddingBottom:6,borderBottom:'1px solid #f1f5f9'}}>
+                Overall Result
+              </div>
+              <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:10}}>
+                {[['total_score','Total Score'],['percentile','Percentile'],['overall_accuracy','Accuracy %'],['rank','Rank']].map(([k,l])=>(
+                  <div key={k}>
+                    <label className="label">{l}</label>
+                    <input className="input" type="number" value={scoreForm[k]} onChange={e=>setSF(k,e.target.value)} placeholder="—"/>
+                  </div>
+                ))}
+              </div>
+
+              <div>
+                <label className="label">Notes / Takeaways</label>
+                <textarea className="input" value={scoreForm.notes} onChange={e=>setSF('notes',e.target.value)}
+                  placeholder="What went well? What to improve?" style={{minHeight:72}}/>
+              </div>
+            </div>
+            <div className="modal-foot">
+              <button className="btn btn-ghost" onClick={()=>setShowScoreForm(false)}>Cancel</button>
+              <button className="btn btn-primary" onClick={saveScoreForm}>✓ Save Score</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
