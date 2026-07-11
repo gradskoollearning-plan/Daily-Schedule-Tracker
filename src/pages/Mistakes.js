@@ -10,92 +10,38 @@ const SECTIONS = [
 ];
 const secCfg = k => SECTIONS.find(s=>s.key===k) || SECTIONS[3];
 
-const MISTAKE_TYPES = [
-  'Silly Mistake','Conceptual Gap','Time Management',
-  'Careless Reading','Calculation Error','Wrong Approach','Other',
-];
-
 const today = () => new Date().toISOString().split('T')[0];
 
-const EMPTY = {
-  date:today(), section:'VARC', topic:'', mistake_type:'Silly Mistake', description:'',
-  test_score_id:'', test_name_custom:'', resolved:false,
-};
-
-export default function Mistakes() {
+export default function Mistakes({ goTo }) {
   const { user } = useAuth();
   const [rows, setRows]         = useState([]);
-  const [myScores, setMyScores] = useState([]);
   const [loading, setLoading]   = useState(true);
-  const [form, setForm]         = useState(EMPTY);
-  const [showForm, setShowForm] = useState(false);
-  const [editId, setEditId]     = useState(null);
   const [filterSec, setFilterSec] = useState('all');
   const [filterStatus, setFilterStatus] = useState('open'); // open | resolved | all
   const [toast, setToast]       = useState('');
-  const set = (k,v)=>setForm(f=>({...f,[k]:v}));
 
   function showToast(m){ setToast(m); setTimeout(()=>setToast(''),2200); }
 
   const load = useCallback(async ()=>{
     if(!user) return;
-    const [{ data: ml }, { data: sc }] = await Promise.all([
-      supabase.from('mistake_log').select('*').eq('user_id',user.id).order('date',{ascending:false}),
-      supabase.from('test_scores').select('id,date,test_name,test_type').eq('user_id',user.id).order('date',{ascending:false}),
-    ]);
+    const { data: ml } = await supabase.from('mistake_log').select('*').eq('user_id',user.id).order('date',{ascending:false});
     setRows(ml||[]);
-    setMyScores(sc||[]);
     setLoading(false);
   },[user]);
 
   useEffect(()=>{ load(); },[load]);
 
-  // Handoff from Scores.js: "Log a mistake for this test" deep-link
-  useEffect(()=>{
-    if(loading) return;
-    const raw = localStorage.getItem('gs_pending_mistake');
-    if(!raw) return;
+  function goNew(section){
+    localStorage.removeItem('gs_edit_mistake');
     localStorage.removeItem('gs_pending_mistake');
-    try{
-      const pending = JSON.parse(raw);
-      setForm({...EMPTY, test_score_id: pending.test_score_id||'', test_name_custom: pending.test_name||''});
-      setEditId(null);
-      setShowForm(true);
-    }catch{ /* ignore malformed payload */ }
-  },[loading]);
-
-  function openNew(section){
-    setEditId(null);
-    setForm({...EMPTY, section: section||'VARC'});
-    setShowForm(true);
+    if(section) localStorage.setItem('gs_new_mistake_section', section);
+    else localStorage.removeItem('gs_new_mistake_section');
+    goTo('log-mistake');
   }
 
-  function openEdit(r){
-    setEditId(r.id);
-    setForm({
-      date:r.date, section:r.section, topic:r.topic||'',
-      mistake_type:r.mistake_type||'Silly Mistake', description:r.description||'',
-      test_score_id: r.test_score_id || '',
-      test_name_custom: r.test_score_id ? '' : (r.test_name||''),
-      resolved: r.resolved||false,
-    });
-    setShowForm(true);
-  }
-
-  async function save(){
-    if(!form.date||!form.section) return;
-    const linkedScore = myScores.find(s=>s.id===form.test_score_id);
-    const payload = {
-      user_id:user.id, date:form.date, section:form.section, topic:form.topic||null,
-      mistake_type:form.mistake_type, description:form.description||null,
-      resolved: form.resolved,
-      test_score_id: form.test_score_id || null,
-      test_name: linkedScore ? linkedScore.test_name : (form.test_name_custom || null),
-    };
-    if(editId) await supabase.from('mistake_log').update(payload).eq('id',editId);
-    else await supabase.from('mistake_log').insert(payload);
-    setShowForm(false); setEditId(null); setForm(EMPTY);
-    load(); showToast('✅ Mistake logged');
+  function goEdit(r){
+    localStorage.setItem('gs_edit_mistake', JSON.stringify(r));
+    goTo('log-mistake');
   }
 
   async function toggleResolved(r){
@@ -140,7 +86,7 @@ export default function Mistakes() {
           <h1 style={s.title}>🧩 Mistake Log</h1>
           <p style={s.sub}>Track exactly where and why you're losing marks, section by section</p>
         </div>
-        <button className="btn btn-primary" onClick={()=>openNew()}>+ Log Mistake</button>
+        <button className="btn btn-primary" onClick={()=>goNew()}>+ Log Mistake</button>
       </div>
 
       {/* Revision nudge: mistakes open 7+ days without a fix */}
@@ -151,7 +97,7 @@ export default function Mistakes() {
           </p>
           <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
             {staleOpen.slice(0,6).map(r=>(
-              <button key={r.id} onClick={()=>openEdit(r)}
+              <button key={r.id} onClick={()=>goEdit(r)}
                 style={{padding:'4px 12px',background:'#fff',border:'1px solid #fecdd3',borderRadius:99,fontSize:12,fontWeight:600,color:'#9f1239',cursor:'pointer',fontFamily:'inherit'}}>
                 {r.section}{r.topic?` · ${r.topic}`:''} ({daysOpen(r.date)}d)
               </button>
@@ -164,7 +110,7 @@ export default function Mistakes() {
       <div className="grid-4" style={{gap:10}}>
         {SECTIONS.map(sec=>(
           <div key={sec.key} className="metric card-sm" style={{border:`1px solid ${sec.border}`,cursor:'pointer'}}
-            onClick={()=>openNew(sec.key)}>
+            onClick={()=>goNew(sec.key)}>
             <p className="metric-label" style={{color:sec.color}}>{sec.key}</p>
             <p style={{fontSize:20,fontWeight:800,color:sec.color,fontFamily:'monospace'}}>{counts[sec.key]}</p>
             <p style={{fontSize:11,color:'#94a3b8',marginTop:2}}>
@@ -231,7 +177,7 @@ export default function Mistakes() {
                       <td style={{color:'#64748b',maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.description||'—'}</td>
                       <td>
                         <div style={{display:'flex',gap:5}}>
-                          <button className="btn btn-ghost btn-sm" onClick={()=>openEdit(r)}>Edit</button>
+                          <button className="btn btn-ghost btn-sm" onClick={()=>goEdit(r)}>Edit</button>
                           <button className="btn btn-danger btn-sm" onClick={()=>del(r.id)}>Del</button>
                         </div>
                       </td>
@@ -240,76 +186,6 @@ export default function Mistakes() {
                 })}
               </tbody>
             </table>
-          </div>
-        </div>
-      )}
-
-      {showForm&&(
-        <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&setShowForm(false)}>
-          <div className="modal" style={{maxWidth:520}}>
-            <div className="modal-head">
-              <h3>{editId?'Edit Mistake':'Log a Mistake'}</h3>
-              <button className="close-btn" onClick={()=>setShowForm(false)}>✕</button>
-            </div>
-            <div className="modal-body">
-              <div className="grid-2">
-                <div>
-                  <label className="label">Date</label>
-                  <input className="input" type="date" value={form.date} onChange={e=>set('date',e.target.value)}/>
-                </div>
-                <div>
-                  <label className="label">Section</label>
-                  <select className="input" value={form.section} onChange={e=>set('section',e.target.value)}>
-                    {SECTIONS.map(sec=><option key={sec.key} value={sec.key}>{sec.key}</option>)}
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label className="label">Topic (optional)</label>
-                <input className="input" value={form.topic} onChange={e=>set('topic',e.target.value)}
-                  placeholder="e.g. Parajumbles, TSD, Puzzles"/>
-              </div>
-
-              <div>
-                <label className="label">Link to a logged test (optional)</label>
-                <select className="input" value={form.test_score_id} onChange={e=>set('test_score_id',e.target.value)}>
-                  <option value="">— Not linked to a specific test —</option>
-                  {myScores.map(sc=>(
-                    <option key={sc.id} value={sc.id}>{sc.date} — {sc.test_name}</option>
-                  ))}
-                </select>
-                {!form.test_score_id && (
-                  <input className="input" style={{marginTop:8}} value={form.test_name_custom}
-                    onChange={e=>set('test_name_custom',e.target.value)}
-                    placeholder="Or just type a test name (if not logged yet)"/>
-                )}
-              </div>
-
-              <div>
-                <label className="label">Mistake Type</label>
-                <select className="input" value={form.mistake_type} onChange={e=>set('mistake_type',e.target.value)}>
-                  {MISTAKE_TYPES.map(t=><option key={t} value={t}>{t}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="label">What happened?</label>
-                <textarea className="input" value={form.description} onChange={e=>set('description',e.target.value)}
-                  placeholder="e.g. Misread the question, assumed wrong sign in inequality…" style={{minHeight:80}}/>
-              </div>
-
-              <label style={{display:'flex',alignItems:'center',gap:8,cursor:'pointer',fontSize:13,fontWeight:600,color:'#0f172a'}}>
-                <input type="checkbox" checked={form.resolved} onChange={e=>set('resolved',e.target.checked)}
-                  style={{width:16,height:16}}/>
-                Already fixed this — mark as resolved
-              </label>
-            </div>
-            <div className="modal-foot">
-              <button className="btn btn-ghost" onClick={()=>setShowForm(false)}>Cancel</button>
-              <button className="btn btn-primary" onClick={save} disabled={!form.date||!form.section}>
-                {editId?'Update':'Save'}
-              </button>
-            </div>
           </div>
         </div>
       )}

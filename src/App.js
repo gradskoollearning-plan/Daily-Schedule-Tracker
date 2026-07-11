@@ -8,7 +8,9 @@ import Planner     from './pages/Planner';
 import MyPlanner   from './pages/MyPlanner';
 import Links       from './pages/Links';
 import Scores      from './pages/Scores';
+import LogScore    from './pages/LogScore';
 import Mistakes    from './pages/Mistakes';
+import LogMistake  from './pages/LogMistake';
 import Analytics   from './pages/Analytics';
 import Leaderboard from './pages/Leaderboard';
 import Admin       from './pages/Admin';
@@ -61,6 +63,10 @@ function Inner() {
     {id:'leaderboard',icon:'🏆',label:'Leaderboard'},
   ];
 
+  // Tabs that should still highlight the parent nav item while the
+  // user is on a full-page form launched from that section.
+  const mobileActive = active==='log-score' ? 'scores' : active==='log-mistake' ? 'mistakes' : active;
+
   return (
     <div style={{display:'flex',height:'100vh',overflow:'hidden',background:'#f5f7fa'}}>
       <Sidebar active={active} setActive={setActive} />
@@ -70,7 +76,9 @@ function Inner() {
         {active==='my-planner'  && <MyPlanner />}
         {active==='links'       && <Links />}
         {active==='scores'      && <Scores goTo={setActive} />}
-        {active==='mistakes'    && <Mistakes />}
+        {active==='log-score'   && <LogScore goTo={setActive} />}
+        {active==='mistakes'    && <Mistakes goTo={setActive} />}
+        {active==='log-mistake' && <LogMistake goTo={setActive} />}
         {active==='analytics'   && <Analytics />}
         {active==='leaderboard' && <Leaderboard />}
         {active==='admin'       && <Admin />}
@@ -80,7 +88,7 @@ function Inner() {
       <nav className="mobile-nav">
         <div className="mobile-nav-inner">
           {NAV.map(n=>(
-            <button key={n.id} className={`mobile-nav-btn ${active===n.id?'active':''}`}
+            <button key={n.id} className={`mobile-nav-btn ${mobileActive===n.id?'active':''}`}
               onClick={()=>setActive(n.id)}>
               <span className="mnb-icon">{n.icon}</span>
               <span>{n.label}</span>
@@ -96,8 +104,8 @@ function Inner() {
           <div className="quick-log-sheet-inner">
             <p style={{fontSize:13,fontWeight:800,color:'#94a3b8',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:4}}>Quick Log</p>
             <button className="quick-log-btn" onClick={quickMarkTodayDone}>✅ Mark Today's Task Done</button>
-            <button className="quick-log-btn" onClick={()=>{setActive('scores');setQuickOpen(false);}}>📊 Log a Score</button>
-            <button className="quick-log-btn" onClick={()=>{setActive('mistakes');setQuickOpen(false);}}>🧩 Log a Mistake</button>
+            <button className="quick-log-btn" onClick={()=>{setActive('log-score');setQuickOpen(false);}}>📊 Log a Score</button>
+            <button className="quick-log-btn" onClick={()=>{setActive('log-mistake');setQuickOpen(false);}}>🧩 Log a Mistake</button>
             <button className="btn btn-ghost btn-sm" style={{marginTop:4,justifyContent:'center'}} onClick={()=>setQuickOpen(false)}>Cancel</button>
           </div>
         </div>
