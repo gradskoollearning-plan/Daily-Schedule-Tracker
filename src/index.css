@@ -136,28 +136,32 @@ select.input { cursor: pointer; }
 .modal-overlay {
   position: fixed; inset: 0; background: rgba(15,23,42,0.4);
   backdrop-filter: blur(4px); z-index: 200;
-  display: flex; align-items: flex-start; justify-content: center;
-  padding: 40px 16px; overflow-y: auto;
+  display: flex; align-items: center; justify-content: center;
+  padding: 40px 16px;
 }
 .modal {
   background: var(--white); border-radius: var(--radius-lg);
   width: 100%; box-shadow: var(--shadow-lg);
   display: flex; flex-direction: column;
   border: 1px solid var(--border);
-  margin: auto 0;
+  max-height: calc(100vh - 80px);
+  overflow: hidden;
   animation: modalIn 0.2s ease;
 }
 @keyframes modalIn { from { opacity:0; transform: scale(0.97) translateY(8px); } to { opacity:1; transform: none; } }
 .modal-head {
-  position: sticky; top: 0; z-index: 2; background: var(--white);
+  flex-shrink: 0; background: var(--white);
   display: flex; justify-content: space-between; align-items: center;
   padding: 18px 22px 14px; border-bottom: 1px solid var(--border);
   border-radius: var(--radius-lg) var(--radius-lg) 0 0;
 }
 .modal-head h3 { font-size: 16px; font-weight: 800; }
-.modal-body { padding: 18px 22px; display: flex; flex-direction: column; gap: 16px; }
+.modal-body {
+  padding: 18px 22px; display: flex; flex-direction: column; gap: 16px;
+  overflow-y: auto; flex: 1 1 auto; min-height: 0;
+}
 .modal-foot {
-  position: sticky; bottom: 0; z-index: 2; background: var(--white);
+  flex-shrink: 0; background: var(--white);
   display: flex; justify-content: flex-end; gap: 8px;
   padding: 14px 22px; border-top: 1px solid var(--border);
   border-radius: 0 0 var(--radius-lg) var(--radius-lg);
