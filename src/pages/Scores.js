@@ -21,7 +21,6 @@ export default function Scores({ goTo }) {
       reload();
       showToast('✅ Score saved!');
     }catch{ /* ignore malformed payload */ }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   },[]);
 
   function openNew() {
