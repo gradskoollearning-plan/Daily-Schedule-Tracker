@@ -137,14 +137,14 @@ select.input { cursor: pointer; }
   position: fixed; inset: 0; background: rgba(15,23,42,0.4);
   backdrop-filter: blur(4px); z-index: 200;
   display: flex; align-items: center; justify-content: center;
-  padding: 40px 16px;
+  padding: 16px;
 }
 .modal {
   background: var(--white); border-radius: var(--radius-lg);
   width: 100%; box-shadow: var(--shadow-lg);
   display: flex; flex-direction: column;
   border: 1px solid var(--border);
-  max-height: calc(100vh - 80px);
+  max-height: 100%;
   overflow: hidden;
   animation: modalIn 0.2s ease;
 }
@@ -165,6 +165,8 @@ select.input { cursor: pointer; }
   display: flex; justify-content: flex-end; gap: 8px;
   padding: 14px 22px; border-top: 1px solid var(--border);
   border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+  box-shadow: 0 -4px 10px rgba(15,23,42,0.05);
+  position: relative; z-index: 1;
 }
 .close-btn { background: none; border: none; font-size: 18px; color: var(--text-3); cursor: pointer; padding: 2px 6px; border-radius: 6px; }
 .close-btn:hover { background: var(--bg-2); color: var(--text-2); }
